@@ -1,12 +1,46 @@
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
-def minimal_cost_path(B1, B2):
-    return
+def minimal_cost_path(B1, B2, block_dim, overlap):
+    # Assume looking at column overlap
+    B1_ov = B1[:, (block_dim[1] - overlap):]
+    B2_ov = B2[:, :overlap]
+
+    # Dynamic Programming for cut
+    error_surface = np.power(B1_ov - B2_ov, 2)
+    dp = np.zeros(error_surface.shape)
+    paths = []
+    for i in range(dp.shape[0]):
+        for j in range(dp.shape[1]):
+            dp[i, j] = error_surface[i, j]
+
+            if i == 0:
+                paths.append([])
+            else:
+                min_list = [(dp[i - 1, j], j)]
+                if j - 1 >= 0:
+                    min_list.append((dp[i - 1, j - 1], j - 1))
+                if j + 1 < dp.shape[1]:
+                    min_list.append((dp[i - 1, j + 1], j + 1))
+
+                prev_min = min(min_list)
+                dp[i, j] += prev_min[0]
+
+                paths[j].append((i - 1, prev_min[1]))
+
+    # Find min cost path
+    min_index = 0
+    for i in len(paths):
+        if dp[-1, i] < dp[-1, min_index]:
+            min_index = i
+
+    min_cost_path = paths[min_index]
+    min_cost_path.append((dp.shape[0] - 1, min_index))
+
+    return np.matrix(min_cost_path)
 
 def calc_error(B1, B2):
     return np.linalg.norm(B1 - B2)
-
 
 def get_row_overlap_regions(neighbor, blocks, block_dim, overlap)
     # Get row overlap region from already placed neighbor
@@ -16,6 +50,7 @@ def get_row_overlap_regions(neighbor, blocks, block_dim, overlap)
     block_row_regions = blocks[:, :, :overlap, :]
 
     # Insert dim if needed!
+
     return neighbor_row_regions, block_row_regions
 
 def get_col_overlap_regions(neighbor, blocks, block_dim, overlap):
@@ -26,6 +61,7 @@ def get_col_overlap_regions(neighbor, blocks, block_dim, overlap):
     block_col_regions = blocks[:, :, :, :overlap]
 
     # Insert dim if needed!
+
     return neighbor_col_region, block_col_regions
 
 def get_valid_blocks(neighbor_overlap, block_overlaps, error_tol):
@@ -92,7 +128,6 @@ def quilt(texture, output_dim, block_dim, overlap, error_tol):
 
             if i != 0:
                 row_neighbor = output[(i - row_step):(i - row_step + block_dim[0]), j:(j + block_dim[1])]
-
             if j != 0:
                 col_neighbor = output[i:(i + block_dim[0]), (j - col_step):(j - col_step + block_dim[1])]
 
@@ -100,6 +135,8 @@ def quilt(texture, output_dim, block_dim, overlap, error_tol):
             new_block = find_valid_block(row_neighbor, col_neighbor, texture, block_dim, overlap, error_tol)
 
             # Compute Min Cost Path
+            h_cut = np.flip(minimal_cost_path(row_neighbor.T, new_block.T, block_dim, overlap), axis=1)
+            v_cut = minimal_cost_path(col_neighbor, new_block, block_dim, overlap)
 
             # Insert Block
 
