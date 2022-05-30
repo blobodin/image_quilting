@@ -1,6 +1,32 @@
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
+def combine_cuts(h_cut, v_cut, overlap):
+    v_cut_dict = dict([(v_cut[i], i) for i in range(len(v_cut))])
+    h_cut_dict = dict([(h_cut[i], i) for i in range(len(h_cut))])
+
+    for m in range(len(h_cut) - 1, -1, -1):
+        (i, j) = h_cut[m]
+
+        if (i, j) in v_cut_dict:
+            n = v_cut_dict[(i, j)]
+            return h_cut[m:], v_cut[(n + 1):]
+        elif (i + 1, j) in v_cut_dict:
+            n = v_cut_dict[(i + 1, j)]
+            return h_cut[m:], v_cut[n:]
+        elif (i + 1, j - 1) in v_cut_dict:
+            n = v_cut_dict[(i + 1, j - 1)]
+            return h_cut[m:], v_cut[n:]
+        elif (i, j - 1) in v_cut_dict:
+            n = v_cut_dict[(i, j - 1)]
+            return h_cut[m:], v_cut[n:]
+        elif (i - 1, j - 1) in v_cut_dict:
+            n = v_cut_dict[(i - 1, j - 1)]
+            return h_cut[m:], v_cut[n:]
+
+    print("Shouldnt be here")
+    assert False
+
 def minimal_cost_path(B1, B2, block_dim, overlap):
     # Assume looking at column overlap
     B1_ov = B1[:, (block_dim[1] - overlap):]
@@ -113,9 +139,37 @@ def find_valid_block(row_neighbor, col_neighbor, texture, block_dim, overlap, er
     # Grab randomly chosen block
     chosen_block = blocks[chosen_index[0], chosen_index[1], :, :]
 
-    return chosen_block
+    return np.copy(chosen_block)
 
-def quilt(texture, output_dim, block_dim, overlap, error_tol):
+def insert_block(quilt, x, y, block, block_dim, h_cut, v_cut):
+    wipe = np.zeros(block.shape)
+    for cut_loc in h_cut:
+        (i, j) = cut_loc
+
+        wipe[:i, j] = 1
+        block[:i, j] = 0
+
+    for cut_loc in v_cut:
+        (i, j) = cut_loc
+
+        wipe[i, :j] = 1
+        block[i, :j] = 0
+
+    # Check if first cut loc for h_cut lies on top of first cut_loc for
+    # v_cut, if it does use it to clear out remaining area. Otherwise
+    # use first v_cut
+    if h_cut[0][0] == v_cut[0][0] - 1 and h_cut[0][1] == v_cut[0][1]
+        wipe[:(h_cut[0][0] + 1), :(h_cut[0][1])] = 1
+        block[:(h_cut[0][0] + 1), :(h_cut[0][1])] = 0
+    else:
+        wipe[:(v_cut[0][0]), :(v_cut[0][1] + 1)] = 1
+        block[:(v_cut[0][0]), :(v_cut[0][1] + 1)] = 0
+
+
+    quilt[x:(x + block_dim[0]), y:(y + block_dim[1])] *= wipe
+    quilt[x:(x + block_dim[0]), y:(y + block_dim[1])] += block
+
+def make_quilt(texture, output_dim, block_dim, overlap, error_tol):
 
     output = np.zeros(output_dim)
 
@@ -137,8 +191,13 @@ def quilt(texture, output_dim, block_dim, overlap, error_tol):
             # Compute Min Cost Path
             h_cut = np.flip(minimal_cost_path(row_neighbor.T, new_block.T, block_dim, overlap), axis=1)
             v_cut = minimal_cost_path(col_neighbor, new_block, block_dim, overlap)
+            trim_h_cut, trim_v_cut = combine_cuts(h_cut, v_cut)
 
             # Insert Block
+            insert_block(output, i, jnew_block, block_dim, trim_h_cut, trim_v_cut)
 
+    return  output
 
-    return
+if __name__ == "__main__"
+    # Load Texture
+    # Save Quilt
