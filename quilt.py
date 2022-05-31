@@ -317,14 +317,20 @@ def convert_to_grayscale(im):
     return Y
 
 if __name__ == "__main__":
-    texture = "basket"
-    # Load Texture
-    im = read_image(f"{texture}.jpg")
+    textures = ["text", "cans", "apples"]
 
-    output_dim = (500, 500, 3)
-    block_dim = (60, 60, 3)
-    overlap = int(block_dim[0] / 5)
-    new_im = make_quilt(im, output_dim, block_dim, overlap)
+    for texture in textures:
+        # Load Texture
+        im = read_image(f"{texture}.jpg")
+        if len(im.shape) == 2:
+            new_im = np.zeros((im.shape[0], im.shape[1], 3))
+            new_im[:, :, 0] = im
+            im = new_im
 
-    # Save Quilt
-    write_image(f"new_{texture}.png", new_im)
+        output_dim = (500, 500, 3)
+        block_dim = (60, 60, 3)
+        overlap = int(block_dim[0] / 5)
+        new_im = make_quilt(im, output_dim, block_dim, overlap)
+
+        # Save Quilt
+        write_image(f"new_{texture}.png", new_im)
