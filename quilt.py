@@ -6,7 +6,7 @@ from typing import Tuple, Union
 
 from PIL import Image
 
-def combine_cuts(h_cut, v_cut, overlap):
+def combine_cuts(h_cut, v_cut):
     v_cut_dict = dict([(v_cut[i], i) for i in range(len(v_cut))])
     h_cut_dict = dict([(h_cut[i], i) for i in range(len(h_cut))])
 
@@ -68,7 +68,7 @@ def minimal_cost_path(B1, B2, block_dim, overlap):
     min_cost_path = paths[min_index]
     min_cost_path.append((dp.shape[0] - 1, min_index))
 
-    return np.array(min_cost_path)
+    return min_cost_path
 
 def calc_error(B1, B2):
     return np.linalg.norm(B1 - B2)
@@ -105,10 +105,19 @@ def get_valid_blocks(neighbor_overlap, block_overlaps, error_tol):
     min_block_error = np.partition(np.reshape(error_matrix, (error_matrix.shape[0]**2)), 1)[1]
     print(min_block_error)
     print("SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS")
-    t = min_block_error + min_block_error * 0.2
+    t = min_block_error + min_block_error
     print(t)
     print(error_matrix <= t)
     return error_matrix <= t
+
+def get_error_matrix(neighbor_overlap, block_overlaps, error_tol):
+    # Calculate L2 norm between overlaps
+    error_matrix = np.linalg.norm(block_overlaps - neighbor_overlap, axis=(2, 3))
+
+    # Get boolean matrix of blocks whose error overlap satifies the error tolerance
+    # return error_matrix < error_tol
+
+    return error_matrix
 
 def find_valid_block(row_neighbor, col_neighbor, texture, block_dim, overlap, error_tol):
     # Get all candidate inserts from base texture
@@ -117,34 +126,59 @@ def find_valid_block(row_neighbor, col_neighbor, texture, block_dim, overlap, er
     # Prepare boolean matrix that will designate blocks that satisfy error
     # constraints in row + col overlap regions
     valid_blocks = np.ones((blocks.shape[0], blocks.shape[1]))
-
+    error_matrix = np.zeros((blocks.shape[0], blocks.shape[1]))
+    flag = False
     # If testing error tolerance horizontally
     if row_neighbor is not None:
+        blocks = blocks[:, :, :, :row_neighbor.shape[1]]
+
         # Get row overlap regions of neighbor + blocks
         neighbor_row_region, block_row_regions = get_row_overlap_regions(row_neighbor, blocks, block_dim, overlap)
 
         # Get boolean matrix of blocks that satisfy error tolerance in row
         # overlap region
-        row_valid_blocks = get_valid_blocks(neighbor_row_region, block_row_regions, error_tol)
+        # row_valid_blocks = get_valid_blocks(neighbor_row_region, block_row_regions, error_tol)
+        #
+        # print(np.sum(row_valid_blocks))
+        #
+        # # Adjust overall boolean matrix with new info
+        # valid_blocks *= row_valid_blocks
 
-        # Adjust overall boolean matrix with new info
-        valid_blocks *= row_valid_blocks
+        row_error_matrix = get_error_matrix(neighbor_row_region, block_row_regions, error_tol)
+        error_matrix += row_error_matrix
+        flag = True
+
 
     # If testing error tolerance vertically
     if col_neighbor is not None:
+        blocks = blocks[:, :, :col_neighbor.shape[0], :]
+
         # Get col overlap regions of neighbor + blocks
         neighbor_col_region, block_col_regions = get_col_overlap_regions(col_neighbor, blocks, block_dim, overlap)
 
         # Get boolean matrix of blocks that satisfy error tolerance in col
         # overlap region
-        col_valid_blocks = get_valid_blocks(neighbor_col_region, block_col_regions, error_tol)
+        # col_valid_blocks = get_valid_blocks(neighbor_col_region, block_col_regions, error_tol)
+        #
+        # print(np.sum(col_valid_blocks))
+        #
+        # # Adjust overall boolean matrix with new info
+        # valid_blocks *= col_valid_blocks
 
-        # Adjust overall boolean matrix with new info
-        valid_blocks *= col_valid_blocks
+        col_error_matrix = get_error_matrix(neighbor_col_region, block_col_regions, error_tol)
+        error_matrix += col_error_matrix
+        flag = True
+
+    if not flag:
+        error_matrix = valid_blocks
+
+    min_block_error = np.partition(np.reshape(error_matrix, (error_matrix.shape[0]**2)), 1)[1]
+    t = min_block_error + min_block_error * .1
+    valid_blocks = error_matrix <= t
 
     # Get all indexes of blocks whose overlap satify the error tolerance
     valid_block_indexes = np.argwhere(valid_blocks)
-    print(np.sum(valid_blocks))
+
     # Randomly choose index of valid block
     rnd_choice = np.random.choice(range(len(valid_block_indexes)))
     chosen_block_index = valid_block_indexes[rnd_choice]
@@ -199,6 +233,7 @@ def make_quilt(texture, output_dim, block_dim, overlap, error_tol):
             row_neighbor = None
             col_neighbor = None
 
+            # print(i, j, col_step, output_dim)
             if i != 0:
                 row_neighbor = output[(i - row_step):(i - row_step + block_dim[0]), j:(j + block_dim[1])]
             if j != 0:
@@ -211,9 +246,9 @@ def make_quilt(texture, output_dim, block_dim, overlap, error_tol):
             v_cut = None
             # Compute Min Cost Path
             if row_neighbor is not None:
-                h_cut = list(np.flip(minimal_cost_path(row_neighbor.T, new_block.T, block_dim, overlap), axis=1))
+                h_cut = [(r, q) for (q, r) in minimal_cost_path(row_neighbor.T, new_block.T, block_dim, overlap)]
             if col_neighbor is not None:
-                v_cut = list(minimal_cost_path(col_neighbor, new_block, block_dim, overlap))
+                v_cut = minimal_cost_path(col_neighbor, new_block, block_dim, overlap)
 
             if h_cut is not None or v_cut is not None:
                 if h_cut is not None and v_cut is not None:
@@ -224,9 +259,7 @@ def make_quilt(texture, output_dim, block_dim, overlap, error_tol):
             else:
                 output[:block_dim[0], :block_dim[1]] = new_block
 
-            print(i, j, col_step, output_dim)
-            if i != 0:
-                write_image("new_brick.png", output)
+        write_image("new_brick.png", output)
 
 
     return output
@@ -260,10 +293,12 @@ if __name__ == "__main__":
     write_image("new_brick.png", im)
     gray_im = convert_to_grayscale(im)
 
-    output_dim = (gray_im.shape[0] * 4, gray_im.shape[1] * 4)
-    block_dim = (18, 18)
+    # Problems with block clipping
+    block_dim = (20, 20)
     overlap = int(block_dim[0] / 6)
     error_tol = 2.2
+    output_dim = (450, 450)
+
     new_im = make_quilt(gray_im, output_dim, block_dim, overlap, error_tol)
 
     # Save Quilt
