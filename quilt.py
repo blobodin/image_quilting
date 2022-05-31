@@ -34,11 +34,12 @@ def combine_cuts(h_cut, v_cut):
 
 def minimal_cost_path(B1, B2, block_dim, overlap):
     # Assume looking at column overlap
-    B1_ov = B1[:, (block_dim[1] - overlap):]
-    B2_ov = B2[:, :overlap]
+    B1_ov = convert_to_grayscale(B1[:, (block_dim[1] - overlap):, :])
+    B2_ov = convert_to_grayscale(B2[:, :overlap, :])
 
     # Dynamic Programming for cut
     error_surface = np.power(B1_ov - B2_ov, 2)
+
     dp = np.zeros(error_surface.shape)
     paths = []
     for i in range(dp.shape[0]):
@@ -75,10 +76,10 @@ def calc_error(B1, B2):
 
 def get_row_overlap_regions(neighbor, blocks, block_dim, overlap):
     # Get row overlap region from already placed neighbor
-    neighbor_row_region = neighbor[(neighbor.shape[0] - overlap):, :]
+    neighbor_row_region = neighbor[(neighbor.shape[0] - overlap):, :, :]
 
     # Get row overlap regions of candidate texture blocks
-    block_row_regions = blocks[:, :, :overlap, :]
+    block_row_regions = blocks[:, :, :overlap, :, :]
 
     # Insert dim if needed!
 
@@ -86,10 +87,10 @@ def get_row_overlap_regions(neighbor, blocks, block_dim, overlap):
 
 def get_col_overlap_regions(neighbor, blocks, block_dim, overlap):
     # Get col overlap region from already placed neighbor
-    neighbor_col_region = neighbor[:, (neighbor.shape[1] - overlap):]
+    neighbor_col_region = neighbor[:, (neighbor.shape[1] - overlap):, :]
 
     # Get col overlap regions of candidate texture blocks
-    block_col_regions = blocks[:, :, :, :overlap]
+    block_col_regions = blocks[:, :, :, :overlap, :]
 
     # Insert dim if needed!
 
@@ -112,7 +113,13 @@ def get_valid_blocks(neighbor_overlap, block_overlaps, error_tol):
 
 def get_error_matrix(neighbor_overlap, block_overlaps, error_tol):
     # Calculate L2 norm between overlaps
-    error_matrix = np.linalg.norm(block_overlaps - neighbor_overlap, axis=(2, 3))
+    error_matrix = np.power(block_overlaps - neighbor_overlap, 2)
+    error_matrix = np.sum(error_matrix, axis=2)
+    error_matrix = np.sum(error_matrix, axis=2)
+    error_matrix = np.sum(error_matrix, axis=2)
+
+    # error_matrix = np.linalg.norm(block_overlaps - neighbor_overlap, axis=(2, 3))
+    # error_matrix = np.linalg.norm(block_overlaps - neighbor_overlap, axis=(2, 3))
 
     # Get boolean matrix of blocks whose error overlap satifies the error tolerance
     # return error_matrix < error_tol
@@ -122,6 +129,7 @@ def get_error_matrix(neighbor_overlap, block_overlaps, error_tol):
 def find_valid_block(row_neighbor, col_neighbor, texture, block_dim, overlap, error_tol):
     # Get all candidate inserts from base texture
     blocks = sliding_window_view(texture, block_dim)
+    blocks = np.reshape(blocks, (blocks.shape[0], blocks.shape[1], blocks.shape[3], blocks.shape[4], blocks.shape[5]))
 
     # Prepare boolean matrix that will designate blocks that satisfy error
     # constraints in row + col overlap regions
@@ -130,7 +138,7 @@ def find_valid_block(row_neighbor, col_neighbor, texture, block_dim, overlap, er
     flag = False
     # If testing error tolerance horizontally
     if row_neighbor is not None:
-        row_blocks = blocks[:, :, :row_neighbor.shape[0], :row_neighbor.shape[1]]
+        row_blocks = blocks[:, :, :row_neighbor.shape[0], :row_neighbor.shape[1], :]
 
         # Get row overlap regions of neighbor + blocks
         neighbor_row_region, block_row_regions = get_row_overlap_regions(row_neighbor, row_blocks, block_dim, overlap)
@@ -151,7 +159,7 @@ def find_valid_block(row_neighbor, col_neighbor, texture, block_dim, overlap, er
 
     # If testing error tolerance vertically
     if col_neighbor is not None:
-        col_blocks = blocks[:, :, :col_neighbor.shape[0], :col_neighbor.shape[1]]
+        col_blocks = blocks[:, :, :col_neighbor.shape[0], :col_neighbor.shape[1], :]
 
         # Get col overlap regions of neighbor + blocks
         neighbor_col_region, block_col_regions = get_col_overlap_regions(col_neighbor, col_blocks, block_dim, overlap)
@@ -184,7 +192,7 @@ def find_valid_block(row_neighbor, col_neighbor, texture, block_dim, overlap, er
     chosen_block_index = valid_block_indexes[rnd_choice]
 
     # Grab randomly chosen block
-    chosen_block = blocks[chosen_block_index[0], chosen_block_index[1], :, :]
+    chosen_block = blocks[chosen_block_index[0], chosen_block_index[1], :, :, :]
 
     return np.copy(chosen_block)
 
@@ -195,30 +203,30 @@ def insert_block(quilt, x, y, block, block_dim, h_cut, v_cut):
         for cut_loc in h_cut:
             (i, j) = cut_loc
 
-            wipe[:i, j] = 1
-            block[:i, j] = 0
+            wipe[:i, j, :] = 1
+            block[:i, j, :] = 0
 
     if v_cut is not None:
         for cut_loc in v_cut:
             (i, j) = cut_loc
 
-            wipe[i, :j] = 1
-            block[i, :j] = 0
+            wipe[i, :j, :] = 1
+            block[i, :j, :] = 0
 
     if h_cut is not None and v_cut is not None:
         # Check if first cut loc for h_cut lies on top of first cut_loc for
         # v_cut, if it does use it to clear out remaining area. Otherwise
         # use first v_cut
         if h_cut[0][0] == v_cut[0][0] - 1 and h_cut[0][1] == v_cut[0][1]:
-            wipe[:(h_cut[0][0] + 1), :(h_cut[0][1])] = 1
-            block[:(h_cut[0][0] + 1), :(h_cut[0][1])] = 0
+            wipe[:(h_cut[0][0] + 1), :(h_cut[0][1]), :] = 1
+            block[:(h_cut[0][0] + 1), :(h_cut[0][1]), :] = 0
         else:
-            wipe[:(v_cut[0][0]), :(v_cut[0][1] + 1)] = 1
-            block[:(v_cut[0][0]), :(v_cut[0][1] + 1)] = 0
+            wipe[:(v_cut[0][0]), :(v_cut[0][1] + 1), :] = 1
+            block[:(v_cut[0][0]), :(v_cut[0][1] + 1), :] = 0
 
     # Cut wipe and block if at right edge or bottom boundary before inserting
-    quilt[x:(x + block_dim[0]), y:(y + block_dim[1])] *= wipe[:min(quilt.shape[0] - x, block_dim[0]), :min(quilt.shape[1] - y, block_dim[1])]
-    quilt[x:(x + block_dim[0]), y:(y + block_dim[1])] += block[:min(quilt.shape[0] - x, block_dim[0]), :min(quilt.shape[1] - y, block_dim[1])]
+    quilt[x:(x + block_dim[0]), y:(y + block_dim[1]), :] *= wipe[:min(quilt.shape[0] - x, block_dim[0]), :min(quilt.shape[1] - y, block_dim[1]), :]
+    quilt[x:(x + block_dim[0]), y:(y + block_dim[1]), :] += block[:min(quilt.shape[0] - x, block_dim[0]), :min(quilt.shape[1] - y, block_dim[1]), :]
 
     return quilt
 
@@ -234,20 +242,20 @@ def make_quilt(texture, output_dim, block_dim, overlap, error_tol):
 
             # print(i, j, col_step, output_dim)
             if i != 0:
-                row_neighbor = output[(i - row_step):(i - row_step + block_dim[0]), j:(j + block_dim[1])]
+                row_neighbor = output[(i - row_step):(i - row_step + block_dim[0]), j:(j + block_dim[1]), :]
             if j != 0:
-                col_neighbor = output[i:(i + block_dim[0]), (j - col_step):(j - col_step + block_dim[1])]
+                col_neighbor = output[i:(i + block_dim[0]), (j - col_step):(j - col_step + block_dim[1]), :]
 
             print(i, j, output_dim, col_step)
             # Get Valid Block to Insert
             new_block = find_valid_block(row_neighbor, col_neighbor, texture, block_dim, overlap, error_tol)
-            new_block = new_block[:min(output.shape[0] - i, block_dim[0]), :min(output.shape[1] - j, block_dim[1])]
+            new_block = new_block[:min(output.shape[0] - i, block_dim[0]), :min(output.shape[1] - j, block_dim[1]), :]
 
             h_cut = None
             v_cut = None
             # Compute Min Cost Path
             if row_neighbor is not None:
-                h_cut = [(r, q) for (q, r) in minimal_cost_path(row_neighbor.T, new_block.T, block_dim, overlap)]
+                h_cut = [(r, q) for (q, r) in minimal_cost_path(np.transpose(row_neighbor, (1, 0, 2)), np.transpose(new_block, (1, 0, 2)), block_dim, overlap)]
             if col_neighbor is not None:
                 v_cut = minimal_cost_path(col_neighbor, new_block, block_dim, overlap)
 
@@ -258,7 +266,7 @@ def make_quilt(texture, output_dim, block_dim, overlap, error_tol):
                 # Insert Block
                 output = insert_block(output, i, j, new_block, block_dim, h_cut, v_cut)
             else:
-                output[:block_dim[0], :block_dim[1]] = new_block
+                output[:block_dim[0], :block_dim[1], :] = new_block
 
     return output
 
@@ -287,7 +295,7 @@ def convert_to_grayscale(im):
 
 if __name__ == "__main__":
     # Load Texture
-    # im = read_image("brick.jpg")
+    im = read_image("brick.jpg")
     # write_image("new_brick.png", im)
     # im = read_image("text.jpg")
     # write_image("new_text.png", im)
@@ -298,16 +306,16 @@ if __name__ == "__main__":
     # print(gray_im)
     # Problems with block clipping
     # block_dim = (60, 60)
-    block_dim = (60, 60)
-    im = read_image("cans.jpg")
-    gray_im = convert_to_grayscale(im)
-    print(gray_im)
+    block_dim = (60, 60, 3)
+    # im = read_image("cans.jpg")
+    # gray_im = convert_to_grayscale(im)
+    # print(gray_im)
 
     overlap = int(block_dim[0] / 6)
     error_tol = 2.2
-    output_dim = (450, 450)
+    output_dim = (450, 450, 3)
 
-    new_im = make_quilt(gray_im, output_dim, block_dim, overlap, error_tol)
+    new_im = make_quilt(im, output_dim, block_dim, overlap, error_tol)
 
     # Save Quilt
-    write_image("new_cans.png", new_im)
+    write_image("new_bricks.png", new_im)
