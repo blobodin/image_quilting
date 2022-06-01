@@ -6,6 +6,8 @@ from typing import Tuple, Union
 
 from PIL import Image
 
+import copy
+
 def combine_cuts(h_cut, v_cut):
     v_cut_dict = dict([(v_cut[i], i) for i in range(len(v_cut))])
     h_cut_dict = dict([(h_cut[i], i) for i in range(len(h_cut))])
@@ -41,13 +43,13 @@ def minimal_cost_path(B1, B2, block_dim, overlap):
     error_surface = np.power(B1_ov - B2_ov, 2)
 
     dp = np.zeros(error_surface.shape)
-    paths = []
+    paths = {}
     for i in range(dp.shape[0]):
         for j in range(dp.shape[1]):
             dp[i, j] = error_surface[i, j]
 
             if i == 0:
-                paths.append([])
+                paths[(i, j)] = [(i, j)]
             else:
                 min_list = [(dp[i - 1, j], j)]
                 if j - 1 >= 0:
@@ -58,16 +60,16 @@ def minimal_cost_path(B1, B2, block_dim, overlap):
                 prev_min = min(min_list)
                 dp[i, j] += prev_min[0]
 
-                paths[j].append((i - 1, prev_min[1]))
+                paths[(i, j)] = copy.copy(paths[i - 1, prev_min[1]])
+                paths[(i, j)].append((i, j))
 
     # Find min cost path
     min_index = 0
-    for i in range(len(paths)):
+    for i in range(dp.shape[1]):
         if dp[-1, i] < dp[-1, min_index]:
             min_index = i
 
-    min_cost_path = paths[min_index]
-    min_cost_path.append((dp.shape[0] - 1, min_index))
+    min_cost_path = paths[(dp.shape[0] - 1, min_index)]
 
     return min_cost_path
 
@@ -255,7 +257,7 @@ def make_quilt(texture, output_dim, block_dim, overlap):
     col_step = block_dim[1] - overlap
     for i in range(0, output_dim[0], row_step):
         for j in range(0, output_dim[1], col_step):
-            print(i, j)
+            # print(i, j)
 
             row_neighbor = None
             col_neighbor = None
@@ -317,20 +319,22 @@ def convert_to_grayscale(im):
     return Y
 
 if __name__ == "__main__":
-    textures = ["text", "cans", "apples"]
+    textures = ["text"]
 
     for texture in textures:
         # Load Texture
-        im = read_image(f"{texture}.jpg")
+        im = read_image(f"textures/{texture}.jpg")
         if len(im.shape) == 2:
             new_im = np.zeros((im.shape[0], im.shape[1], 3))
             new_im[:, :, 0] = im
+            new_im[:, :, 1] = im
+            new_im[:, :, 2] = im
             im = new_im
 
         output_dim = (500, 500, 3)
         block_dim = (60, 60, 3)
-        overlap = int(block_dim[0] / 5)
+        overlap = int(block_dim[0] / 6)
         new_im = make_quilt(im, output_dim, block_dim, overlap)
 
         # Save Quilt
-        write_image(f"new_{texture}.png", new_im)
+        write_image(f"generated_textures/new_{texture}.png", new_im)

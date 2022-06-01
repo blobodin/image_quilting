@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Tuple, Union
 
 from PIL import Image
+from scipy.ndimage import gaussian_filter
 
 def combine_cuts(h_cut, v_cut):
     v_cut_dict = dict([(v_cut[i], i) for i in range(len(v_cut))])
@@ -41,13 +42,13 @@ def minimal_cost_path(B1, B2, block_dim, overlap):
     error_surface = np.power(B1_ov - B2_ov, 2)
 
     dp = np.zeros(error_surface.shape)
-    paths = []
+    paths = {}
     for i in range(dp.shape[0]):
         for j in range(dp.shape[1]):
             dp[i, j] = error_surface[i, j]
 
             if i == 0:
-                paths.append([])
+                paths[(i, j)] = [(i, j)]
             else:
                 min_list = [(dp[i - 1, j], j)]
                 if j - 1 >= 0:
@@ -58,16 +59,16 @@ def minimal_cost_path(B1, B2, block_dim, overlap):
                 prev_min = min(min_list)
                 dp[i, j] += prev_min[0]
 
-                paths[j].append((i - 1, prev_min[1]))
+                paths[(i, j)] = copy.copy(paths[i - 1, prev_min[1]])
+                paths[(i, j)].append((i, j))
 
     # Find min cost path
     min_index = 0
-    for i in range(len(paths)):
+    for i in range(dp.shape[1]):
         if dp[-1, i] < dp[-1, min_index]:
             min_index = i
 
-    min_cost_path = paths[min_index]
-    min_cost_path.append((dp.shape[0] - 1, min_index))
+    min_cost_path = paths[(dp.shape[0] - 1, min_index)]
 
     return min_cost_path
 
@@ -210,47 +211,52 @@ def find_valid_block(row_neighbor, col_neighbor, curr_region, texture, c_texture
     return np.copy(chosen_block)
 
 def insert_block(quilt, x, y, block, block_dim, h_cut, v_cut):
-    wipe = np.zeros(block_dim)
+    h_wipe = np.zeros(block.shape)
+    v_wipe = np.zeros(block.shape)
 
     # Copy for visualizing
-    new_block = np.copy(block)
+    # new_block = np.copy(block)
 
     if h_cut is not None:
         for cut_loc in h_cut:
             (i, j) = cut_loc
 
-            wipe[:i, j, :] = 1
+            h_wipe[:i, j, :] = 1
             block[:i, j, :] = 0
 
-            new_block[i, j, 0] = 1
-            new_block[i, j, 1] = 0
-            new_block[i, j, 2] = 0
+            # new_block[i, j, 0] = 1
+            # new_block[i, j, 1] = 0
+            # new_block[i, j, 2] = 0
 
     if v_cut is not None:
         for cut_loc in v_cut:
             (i, j) = cut_loc
 
-            wipe[i, :j, :] = 1
+            v_wipe[i, :j, :] = 1
             block[i, :j, :] = 0
+            #
+            # new_block[i, j, 0] = 1
+            # new_block[i, j, 1] = 0
+            # new_block[i, j, 2] = 0
 
-            new_block[i, j, 0] = 1
-            new_block[i, j, 1] = 0
-            new_block[i, j, 2] = 0
+    # if h_cut is not None and v_cut is not None:
+    #     # Check if first cut loc for h_cut lies on top of first cut_loc for
+    #     # v_cut, if it does use it to clear out remaining area. Otherwise
+    #     # use first v_cut
+    #     if h_cut[0][0] == v_cut[0][0] - 1 and h_cut[0][1] == v_cut[0][1]:
+    #         wipe[:(h_cut[0][0] + 1), :(h_cut[0][1]), :] = 1
+    #         block[:(h_cut[0][0] + 1), :(h_cut[0][1]), :] = 0
+    #     else:
+    #         wipe[:(v_cut[0][0]), :(v_cut[0][1] + 1), :] = 1
+    #         block[:(v_cut[0][0]), :(v_cut[0][1] + 1), :] = 0
 
-    if h_cut is not None and v_cut is not None:
-        # Check if first cut loc for h_cut lies on top of first cut_loc for
-        # v_cut, if it does use it to clear out remaining area. Otherwise
-        # use first v_cut
-        if h_cut[0][0] == v_cut[0][0] - 1 and h_cut[0][1] == v_cut[0][1]:
-            wipe[:(h_cut[0][0] + 1), :(h_cut[0][1]), :] = 1
-            block[:(h_cut[0][0] + 1), :(h_cut[0][1]), :] = 0
-        else:
-            wipe[:(v_cut[0][0]), :(v_cut[0][1] + 1), :] = 1
-            block[:(v_cut[0][0]), :(v_cut[0][1] + 1), :] = 0
+    wipe = h_wipe + v_wipe > 0
 
     # Cut wipe and block if at right edge or bottom boundary before inserting
-    quilt[x:(x + block_dim[0]), y:(y + block_dim[1]), :] *= wipe[:min(quilt.shape[0] - x, block_dim[0]), :min(quilt.shape[1] - y, block_dim[1]), :]
-    quilt[x:(x + block_dim[0]), y:(y + block_dim[1]), :] += block[:min(quilt.shape[0] - x, block_dim[0]), :min(quilt.shape[1] - y, block_dim[1]), :]
+    # quilt[x:(x + block_dim[0]), y:(y + block_dim[1]), :] *= wipe[:min(quilt.shape[0] - x, block_dim[0]), :min(quilt.shape[1] - y, block_dim[1]), :]
+    # quilt[x:(x + block_dim[0]), y:(y + block_dim[1]), :] += block[:min(quilt.shape[0] - x, block_dim[0]), :min(quilt.shape[1] - y, block_dim[1]), :]
+    quilt[x:(x + block_dim[0]), y:(y + block_dim[1]), :] *= wipe
+    quilt[x:(x + block_dim[0]), y:(y + block_dim[1]), :] += block
 
     # write_image("cut.png", new_block)
 
@@ -295,8 +301,8 @@ def make_quilt(texture, c_texture, output, block_dim, overlap, cmap, alpha, N):
 
             # Insert block while applying cut(s)
             if h_cut is not None or v_cut is not None:
-                if h_cut is not None and v_cut is not None:
-                    h_cut, v_cut = combine_cuts(h_cut, v_cut)
+                # if h_cut is not None and v_cut is not None:
+                #     h_cut, v_cut = combine_cuts(h_cut, v_cut)
 
                 # Insert Block
                 output = insert_block(output, i, j, new_block, block_dim, h_cut, v_cut)
@@ -304,7 +310,7 @@ def make_quilt(texture, c_texture, output, block_dim, overlap, cmap, alpha, N):
                 # If first block, just insert
                 output[:block_dim[0], :block_dim[1], :] = new_block
 
-            # write_image("transfer.png", output)
+            write_image("transfer.png", output)
     return output
 
 #------------------------------------------------------------------------------
@@ -331,14 +337,19 @@ def convert_to_grayscale(im):
     return Y
 
 if __name__ == "__main__":
-    textures = ["rice"]
+    textures = ["fabric"]
+    target = "girl"
+
+    # Get correspondence map
+    cmap = convert_to_grayscale(read_image(f"targets/{target}.jpg"))
+    # cmap = gaussian_filter(cmap, 1)
 
     for texture in textures:
-        # Get correspondence map
-        cmap = convert_to_grayscale(read_image("bill.jpg"))
-
         # Load Texture
-        im = read_image(f"{texture}.jpg")
+        im = read_image(f"textures/{texture}.jpg")
+        c_im = convert_to_grayscale(im)
+        # c_im = gaussian_filter(c_im, 1)
+
         if len(im.shape) == 2:
             new_im = np.zeros((im.shape[0], im.shape[1], 3))
             new_im[:, :, 0] = im
@@ -346,17 +357,16 @@ if __name__ == "__main__":
 
         output_dim = (cmap.shape[0], cmap.shape[1], 3)
         output = np.zeros(output_dim)
-        N = 3
-        alpha = 0.1
-        block_dim = (90, 90, 3)
+        N = 4
+        block_dim = (40, 40, 3)
 
         for n in range(N):
-            overlap = int(block_dim[0] / 5)
-
-            output = make_quilt(im, convert_to_grayscale(im), output, block_dim, overlap, cmap, alpha, N)
-
-            block_dim = (int(block_dim[0] / 3), int(block_dim[1] / 3), 3)
             alpha = 0.8 * (n / (N - 1)) + 0.1
+            overlap = int(block_dim[0] / 6)
+
+            output = make_quilt(im, c_im, output, block_dim, overlap, cmap, alpha, N)
+
+            block_dim = (int(block_dim[0] - 10), int(block_dim[1] - 10), 3)
 
         # Save Quilt
-        write_image(f"new_transfer_{texture}.png", output)
+        write_image(f"transfers/new_transfer_{texture}_{target}.png", output)
