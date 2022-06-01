@@ -55,9 +55,10 @@ def make_quilt(texture, output_dim, block_dim, overlap):
     return output
 
 if __name__ == "__main__":
-    textures = ["text"]
+    textures = ["rock"]
 
     for texture in textures:
+        print("Quilting: ", texture)
         # Load Texture
         im = read_image(f"textures/{texture}.jpg")
         if len(im.shape) == 2:

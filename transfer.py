@@ -64,8 +64,8 @@ def make_transfer(output, texture, c_texture, c_target, block_dim, overlap, alph
 
 
 if __name__ == "__main__":
-    texture_name = "orange"
-    target_name = "pear"
+    texture_name = "fabric"
+    target_name = "pacino"
 
     # Load correspondence map of target
     c_target = convert_to_grayscale(read_image(f"targets/{target_name}.jpg"))
@@ -92,7 +92,7 @@ if __name__ == "__main__":
     # and increasing alpha
     for n in range(N):
         alpha = 0.8 * (n / (N - 1)) + 0.1
-        overlap = int(block_dim[0] / 5)
+        overlap = int(block_dim[0] / 4)
 
         output = make_transfer(output, texture, c_texture, c_target, block_dim, overlap, alpha, N)
 
